@@ -1,0 +1,125 @@
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <WiFiUdp.h>
+#include <map>
+#include <iterator>
+
+extern "C" {
+    #include <user_interface.h>
+}
+
+struct teacher
+{
+    String tName;
+    String address;
+};
+
+//SSID and Password to ESP Access Point
+const char *ssid = "ESPWebServer";
+const char *password = "12345678";
+
+//DECLARATION OF DEVICES AND TEACHERS ASSOCIATED WITH SAID DEVICES
+std::map<int, teacher> teachers;
+
+struct station_info *stat_info;
+struct ip_addr *IPaddress;
+IPAddress address;
+
+//UDP COMMS DECLARATION
+WiFiUDP Udp;
+unsigned int localUdpPort = 4210;                     // local port to listen on
+char incomingPacket[255];                             // buffer for incoming packets
+char replyPacekt[] = "Hi there! Got the message :-)"; // a reply string to send back
+IPAddress broadcastIp;
+
+//void dumpClients();
+void addTeacher(String teacherName, String teacherAddress);
+void printTeachers();
+
+//===============================================================
+//                  SETUP
+//===============================================================
+void setup(void)
+{
+    Serial.begin(9600);
+    Serial.println("");
+    WiFi.mode(WIFI_AP);          //Only Access point
+    WiFi.softAP(ssid, password); //Start HOTspot removing password will disable security
+
+    IPAddress myIP = WiFi.softAPIP(); //Get IP address
+    Serial.print("HotSpt IP:");
+    Serial.println(myIP);
+
+    Udp.begin(localUdpPort);
+    Serial.printf("Now listening at IP %s, UDP port %d\n", WiFi.localIP().toString().c_str(), localUdpPort);
+}
+//===============================================================
+//                     LOOP
+//===============================================================
+void loop(void)
+{
+    int packetSize = Udp.parsePacket();
+    if (packetSize) 
+    {
+        broadcastIp = ~WiFi.subnetMask() | WiFi.gatewayIP();
+        //Serial.printf(broadcastIp.toString().c_str());
+        //Serial.printf("\n");
+        // receive incoming UDP packets
+        Serial.printf("Received %d bytes from %s, port %d\n", packetSize, Udp.remoteIP().toString().c_str(), Udp.remotePort());
+        int len = Udp.read(incomingPacket, 255);
+        if (len > 0)
+        {
+            incomingPacket[len] = 0;
+        }  
+        Serial.printf("UDP packet contents: %s\n", incomingPacket);
+        
+        if (strstr(incomingPacket, "%r:") != NULL)
+        {
+            String packetContent = String(incomingPacket);
+            String packetAddress = Udp.remoteIP().toString();
+            addTeacher(packetContent, packetAddress);
+            printTeachers();
+            // send back a reply, to the IP address and port we got the packet from
+            Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+            //reply packet needs to contain confirmation of linked list entry
+            Udp.write(replyPacekt);
+            Udp.endPacket();
+            delay(500);
+        }
+    }
+}
+
+void addTeacher(String teacherName, String teacherAddress) {
+    teacher myTeacher;
+    myTeacher.tName = teacherName;
+    myTeacher.address = teacherAddress;
+    teachers.insert(std::pair<int, teacher>(teachers.size(), myTeacher)); 
+}
+
+void printTeachers() {
+    Serial.println("Teachers contains:");    
+    std::map<int, teacher>::iterator it = teachers.begin();
+    for (it = teachers.begin(); it != teachers.end(); ++it) {
+        Serial.printf("ID: %d\n", it->first);
+        Serial.print("Name: ");
+        Serial.println(it->second.tName);
+        Serial.print("Address: ");                
+        Serial.println(it->second.address);
+    }
+}
+
+void dumpClients() {
+    Serial.print(" Clients:\r\n");
+    stat_info = wifi_softap_get_station_info();
+    while (stat_info != NULL)
+    {
+        IPaddress = &stat_info->ip;
+        address = IPaddress->addr;
+        Serial.print("\t");
+        Serial.print(address);
+        Serial.print("\r\n");
+        stat_info = STAILQ_NEXT(stat_info, next);
+    }
+}
