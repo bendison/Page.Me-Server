@@ -44,6 +44,7 @@ char incomingPacket[255];                             // buffer for incoming pac
 char replyPacekt[] = "Hi there! Got the message :-)"; // a reply string to send back
 IPAddress broadcastIp;*/
 
+int findTeacher(String teacherName, String teacherAddress);
 void addTeacher(String teacherName, String teacherAddress);
 void printTeachers();
 
@@ -94,10 +95,38 @@ void handleNotFound(){
 }
 
 void handleTeacherConnectRequest() {
-    String name = server.arg("name");
-    //TODO
-    //add to map of teachers and addresses
-    server.send(200, "text/plain", name); 
+    String teacherName = server.arg("name");
+    String teacherAddress = server.arg("address");
+    Serial.println("New Teacher Connect Request");
+    int key = findTeacher(teacherName, teacherAddress);
+    if (key == -1) {
+        Serial.println("New teacher attempting to join the network: ");
+        Serial.print(teacherName);
+        Serial.print(" : ");
+        Serial.println(teacherAddress);
+        addTeacher(teacherName, teacherAddress);
+    }
+    else {
+        Serial.println("Teacher already exists in the network.");
+    }
+    server.send(200, "text/plain", teacherName); 
+    printTeachers();
+}
+
+int findTeacher(String teacherName, String teacherAddress) {
+    std::map<int, teacher>::const_iterator it;
+    int key = -1;
+    for (it = teachers.begin(); it != teachers.end(); ++it)
+    {
+        Serial.println(it->second.tName);
+        Serial.println(teacherName);
+        if (it->second.tName.compareTo(teacherName) == 0)
+        {
+            key = it->first;
+            break;
+        }
+    }
+    return key;
 }
 
 void addTeacher(String teacherName, String teacherAddress) {
@@ -105,6 +134,7 @@ void addTeacher(String teacherName, String teacherAddress) {
     myTeacher.tName = teacherName;
     myTeacher.address = teacherAddress;
     teachers.insert(std::pair<int, teacher>(teachers.size(), myTeacher)); 
+    Serial.println("New teacher added to list of teachers.");
 }
 
 void printTeachers() {
