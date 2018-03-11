@@ -12,6 +12,7 @@
 #include <ESP8266WebServer.h>
 //#include <WiFiUdp.h>
 #include <map>
+#include <list>
 #include <iterator>
 
 extern "C" {
@@ -24,6 +25,12 @@ struct teacher
     String address;
 };
 
+String requestedTeacher = "";
+String requestedTeacherResponse = "";
+
+//TODO
+//Add struct for requests
+
 //SSID and Password to ESP Access Point
 const char *ssid = "ESPWebServer";
 const char *password = "12345678";
@@ -32,6 +39,12 @@ ESP8266WebServer server(80);
 
 //DECLARATION OF DEVICES AND TEACHERS ASSOCIATED WITH SAID DEVICES
 std::map<int, teacher> teachers;
+
+std::map<int, String> responses;
+
+String request = "";
+
+String testResponse = "";
 
 struct station_info *stat_info;
 struct ip_addr *IPaddress;
@@ -45,13 +58,17 @@ char replyPacekt[] = "Hi there! Got the message :-)"; // a reply string to send 
 IPAddress broadcastIp;*/
 
 int findTeacher(String teacherName, String teacherAddress);
+void replaceAddress(String teacherName, String teacherAddress);
 void addTeacher(String teacherName, String teacherAddress);
 void printTeachers();
 
 // function prototypes for HTTP handlers
 void handleRoot();              
 void handleNotFound();
+void handleCheck();
 void handleTeacherConnectRequest();
+void handleTest();
+void handleTeacherResponse();
 //void dumpClients();
 
 //===============================================================
@@ -70,17 +87,36 @@ void setup(void){
     server.on("/", handleRoot);      //Which routine to handle at root location
     server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
     server.on("/add", handleTeacherConnectRequest);
+    server.on("/check", handleCheck);
+    server.on("/test", handleTest);
+    server.on("/response", handleTeacherResponse);
     
     server.begin();
     Serial.println("HTTP server started.");
+
+    responses.insert(std::pair<int, String>(1, "Available."));
+    responses.insert(std::pair<int, String>(2, "Back in 5 min."));
+    responses.insert(std::pair<int, String>(3, "Back in 10 min."));
+    responses.insert(std::pair<int, String>(4, "Back in 15 min."));
+    responses.insert(std::pair<int, String>(5, "Not available."));
 }
 //===============================================================
 //                     LOOP
 //===============================================================
 void loop(void){
     server.handleClient();          //Handle client requests
+    if (Serial.available() > 0) {
+        String message = Serial.readString();
+        request = message;
+        Serial.println(request);
+    }
     //Serial.printf("Stations connected to soft-AP = %d\n", WiFi.softAPgetStationNum());
 }
+
+void handleTest() {
+    server.send(200, "text/plain", testResponse);    
+}
+
 void handleRoot() {
     String val = server.arg("keypad");
     Serial.println(val);
@@ -94,6 +130,24 @@ void handleNotFound(){
     server.send(404, "text/plain", "404: Not found"); // Send HTTP status 404 (Not Found) when there's no handler for the URI in the request
 }
 
+void handleTeacherResponse() {
+    String val = server.arg("response");
+    Serial.println(val);
+    int a = atoi(val.c_str());
+    Serial.println(responses.at(a));
+    server.send(200, "text/plain", val); //send back for confirmation of delivery
+    //write over serial to server backend to show response to student
+}
+
+void handleCheck() {
+    Serial.print("Sending response: ");
+    Serial.print(request);
+    server.send(200, "text/plain", request);
+    //String val = server.arg("teacher");
+    //if request, send teacher
+    //if response write over serial
+}
+
 void handleTeacherConnectRequest() {
     String teacherName = server.arg("name");
     String teacherAddress = server.arg("address");
@@ -105,11 +159,18 @@ void handleTeacherConnectRequest() {
         Serial.print(" : ");
         Serial.println(teacherAddress);
         addTeacher(teacherName, teacherAddress);
+        //Send confirmation
+        server.send(200, "text/plain", teacherName); 
+    }
+    else if (key == -2) {
+        Serial.println("Teacher already exists in the network but there is an address mismatch, updating the address.");        
+        replaceAddress(teacherName, teacherAddress);
+        server.send(200, "text/plain", "updated");   
     }
     else {
         Serial.println("Teacher already exists in the network.");
+        server.send(200, "text/plain", "existError");         
     }
-    server.send(200, "text/plain", teacherName); 
     printTeachers();
 }
 
@@ -120,13 +181,33 @@ int findTeacher(String teacherName, String teacherAddress) {
     {
         Serial.println(it->second.tName);
         Serial.println(teacherName);
-        if (it->second.tName.compareTo(teacherName) == 0)
+        //If names match we assume the teacher already exists in the map
+        if (it->second.tName.compareTo(teacherName) == 0 && it->second.address.compareTo(teacherAddress) == 0)
         {
             key = it->first;
             break;
         }
+        else if (it->second.tName.compareTo(teacherName) == 0 && it->second.address.compareTo(teacherAddress) != 0) {
+            key = -2;
+            break;
+        }
     }
     return key;
+}
+
+void replaceAddress(String teacherName, String teacherAddress) {
+    std::map<int, teacher>::iterator it; 
+    for (it = teachers.begin(); it != teachers.end(); ++it)
+    {
+        if (it != teachers.end()) {
+            it->second.address = teacherAddress;
+            Serial.print("Replaced address for ");
+            Serial.print(teacherName);
+            Serial.print(" with ");
+            Serial.println(teacherAddress);
+            break;
+        }
+    }
 }
 
 void addTeacher(String teacherName, String teacherAddress) {
