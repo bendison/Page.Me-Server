@@ -135,6 +135,12 @@ void handleTeacherResponse() {
     Serial.println(val);
     int a = atoi(val.c_str());
     Serial.println(responses.at(a));
+    String response = ":res";
+    response.concat(val);
+    char* buf = (char*) malloc(sizeof(char)*response.length()+1);
+    response.toCharArray(buf, response.length()+1);
+    Serial.write(buf);
+    free(buf);
     server.send(200, "text/plain", val); //send back for confirmation of delivery
     //write over serial to server backend to show response to student
 }
