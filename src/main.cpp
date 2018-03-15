@@ -10,7 +10,6 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
-//#include <WiFiUdp.h>
 #include <map>
 #include <list>
 #include <iterator>
@@ -27,9 +26,6 @@ struct teacher
 
 String requestedTeacher = "";
 String requestedTeacherResponse = "";
-
-//TODO
-//Add struct for requests
 
 //SSID and Password to ESP Access Point
 const char *ssid = "ESPWebServer";
@@ -50,14 +46,8 @@ struct station_info *stat_info;
 struct ip_addr *IPaddress;
 IPAddress address;
 
-//UDP COMMS DECLARATION
-/*WiFiUDP Udp;
-unsigned int localUdpPort = 4210;                     // local port to listen on
-char incomingPacket[255];                             // buffer for incoming packets
-char replyPacekt[] = "Hi there! Got the message :-)"; // a reply string to send back
-IPAddress broadcastIp;*/
-
 int findTeacher(String teacherName, String teacherAddress);
+void replaceName(String teacherName, String teacherAddress);
 void replaceAddress(String teacherName, String teacherAddress);
 void addTeacher(String teacherName, String teacherAddress);
 void printTeachers();
@@ -69,6 +59,7 @@ void handleCheck();
 void handleTeacherConnectRequest();
 void handleTest();
 void handleTeacherResponse();
+void handleTeacherNameUpdate();
 //void dumpClients();
 
 //===============================================================
@@ -90,6 +81,7 @@ void setup(void){
     server.on("/check", handleCheck);
     server.on("/test", handleTest);
     server.on("/response", handleTeacherResponse);
+    server.on("/update", handleTeacherNameUpdate);
     
     server.begin();
     Serial.println("HTTP server started.");
@@ -135,23 +127,36 @@ void handleTeacherResponse() {
     Serial.println(val);
     int a = atoi(val.c_str());
     Serial.println(responses.at(a));
-    String response = ":res";
-    response.concat(val);
+    String response = "res:";
+    //response.concat(val);
+    response.concat(responses.at(a));
     char* buf = (char*) malloc(sizeof(char)*response.length()+1);
     response.toCharArray(buf, response.length()+1);
     Serial.write(buf);
     free(buf);
+    request = "";
     server.send(200, "text/plain", val); //send back for confirmation of delivery
     //write over serial to server backend to show response to student
 }
 
 void handleCheck() {
-    Serial.print("Sending response: ");
-    Serial.print(request);
+    //Serial.print("Sending response: ");
+    //Serial.print(request);
     server.send(200, "text/plain", request);
     //String val = server.arg("teacher");
     //if request, send teacher
     //if response write over serial
+}
+
+void handleTeacherNameUpdate() {
+    String teacherName = server.arg("name");
+    String teacherAddress = server.arg("address");
+    Serial.println("New Teacher Connect Request");
+    int key = findTeacher(teacherName, teacherAddress);
+    if (key == -2) {
+        Serial.println("Teacher found, updating name.");
+        replaceName(teacherName, teacherAddress);
+    }    
 }
 
 void handleTeacherConnectRequest() {
@@ -177,7 +182,6 @@ void handleTeacherConnectRequest() {
         Serial.println("Teacher already exists in the network.");
         server.send(200, "text/plain", "existError");         
     }
-    printTeachers();
 }
 
 int findTeacher(String teacherName, String teacherAddress) {
@@ -201,6 +205,19 @@ int findTeacher(String teacherName, String teacherAddress) {
     return key;
 }
 
+void replaceName(String teacherName, String teacherAddress) {
+    std::map<int, teacher>::iterator it; 
+    for (it = teachers.begin(); it != teachers.end(); ++it)
+    {
+        if (it != teachers.end()) {
+            it->second.tName = teacherName;
+            Serial.print("Replaced name for ");
+            Serial.print(teacherName);
+            break;
+        }
+    }
+}
+
 void replaceAddress(String teacherName, String teacherAddress) {
     std::map<int, teacher>::iterator it; 
     for (it = teachers.begin(); it != teachers.end(); ++it)
@@ -222,6 +239,12 @@ void addTeacher(String teacherName, String teacherAddress) {
     myTeacher.address = teacherAddress;
     teachers.insert(std::pair<int, teacher>(teachers.size(), myTeacher)); 
     Serial.println("New teacher added to list of teachers.");
+    String teacherToSend = "add:";
+    teacherToSend.concat(teacherName);
+    char* buf = (char*) malloc(sizeof(char)*teacherToSend.length()+1);
+    teacherToSend.toCharArray(buf, teacherToSend.length()+1);
+    Serial.write(buf);     
+    free(buf);  
 }
 
 void printTeachers() {
